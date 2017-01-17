@@ -12,14 +12,21 @@ interface Point {
 }
 
 interface Measurement {
+  name: string;
   speedup: number;
   progress_speedup: number;
+  raw_value: number;
+  // Individual data points from individual experiments.
+  // Used to calculate standard error.
+  individual_progress_speedups: number[];
 }
 
 interface ThroughputData {
   type: 'throughput';
   delta: number;
   duration: number;
+  // Individual data points from individual experiments.
+  points: ThroughputPoint[];
 }
 
 interface LatencyData {
@@ -28,6 +35,8 @@ interface LatencyData {
   departures: number;
   difference: number;
   duration: number;
+  // Individual data points from individual experiments.
+  points: LatencyPoint[];
 }
 
 type Line = Experiment | ThroughputPoint | LatencyPoint;
@@ -43,6 +52,7 @@ interface ThroughputPoint {
   type: 'throughput-point' | 'progress-point';
   name: string;
   delta: number;
+  duration: number;
 }
 
 interface LatencyPoint {
@@ -51,6 +61,7 @@ interface LatencyPoint {
   arrivals: number;
   departures: number;
   difference: number;
+  duration: number;
 }
 
 /**
@@ -78,6 +89,32 @@ function getDataPoint(data: ExperimentData): number {
       const arrivalRate = data.arrivals / data.duration;
       // Average latency, according to Little's Law.
       return data.difference / arrivalRate;
+  }
+}
+
+function getSpeedup(baseline: number, comparison: number) {
+  return (baseline - comparison) / baseline;
+}
+
+function getDataPointForPoint(point: ThroughputPoint | LatencyPoint): number {
+  switch (point.type) {
+    case 'latency-point':
+      return getDataPoint({
+        type: 'latency',
+        arrivals: point.arrivals,
+        departures: point.departures,
+        difference: point.difference,
+        duration: point.duration,
+        points: []
+      });
+    case 'throughput-point':
+    case 'progress-point':
+      return getDataPoint({
+        type: 'throughput',
+        delta: point.delta,
+        duration: point.duration,
+        points: []
+      });
   }
 }
 
@@ -238,12 +275,15 @@ class Profile {
     let entry = this.ensureDataEntry(experiment.selected, point.name, experiment.speedup, {
       delta: 0,
       duration: 0,
-      type: 'throughput'
+      type: 'throughput',
+      points: []
     });
+    point.duration = experiment.duration;
 
     // Add new delta and duration to data
     entry.delta += point.delta;
     entry.duration += experiment.duration;
+    entry.points.push(point);
   }
 
   public addLatencyMeasurement(experiment: Experiment, point: LatencyPoint) {
@@ -252,9 +292,12 @@ class Profile {
       departures: 0,
       difference: 0,
       duration: 0,
-      type: 'latency'
+      type: 'latency',
+      points: []
     });
+    point.duration = experiment.duration;
 
+    entry.points.push(point);
     entry.arrivals += point.arrivals;
     entry.departures += point.departures;
 
@@ -319,13 +362,14 @@ class Profile {
           // Loop over measurements and compute progress speedups in D3-friendly format
           let measurements: Measurement[] = [];
           for (let speedup in point_data) {
-            let data_point = getDataPoint(point_data[speedup]);
+            const exp_data = point_data[speedup];
+            let data_point = getDataPoint(exp_data);
             // Skip invalid data.
             if (!isValidDataPoint(data_point)) {
               continue;
             }
 
-            let progress_speedup = (baseline_data_point - data_point) / baseline_data_point;
+            let progress_speedup = getSpeedup(baseline_data_point, data_point);
             if (!maximize) {
               // We are trying to *minimize* this progress point, so negate the speedup.
               progress_speedup = -progress_speedup;
@@ -335,8 +379,14 @@ class Profile {
             if (progress_speedup >= -1 && progress_speedup <= 2) {
               // Add entry to measurements
               measurements.push({
+                name: point.name,
                 speedup: +speedup,
-                progress_speedup: progress_speedup
+                progress_speedup: progress_speedup,
+                raw_value: data_point,
+                individual_progress_speedups: (<any[]> exp_data.points)
+                  .map(getDataPointForPoint)
+                  .filter(isValidDataPoint)
+                  .map((d) => getSpeedup(baseline_data_point, d))
               });
             }
           }
@@ -469,8 +519,11 @@ class Profile {
       .attr('class', 'd3-tip')
       .offset([-5, 0])
       .html(function (d: Measurement) {
-        return '<strong>Line Speedup:</strong> ' + percentFormat(d.speedup) + '<br>' +
-              '<strong>Progress Speedup:</strong> ' + percentFormat(d.progress_speedup);
+        return `<strong>Progress Point:</strong> ${d.name}<br>
+                <strong>Line Speedup:</strong> ${percentFormat(d.speedup)}<br>
+                <strong>Progress Speedup:</strong> ${percentFormat(d.progress_speedup)}<br>
+                <strong>Data Points:</strong> ${d.individual_progress_speedups.length}<br>
+                <strong>Raw Data:</strong> ${d.raw_value}`;
       })
       .direction(function (d: Measurement) {
         if (d.speedup > 0.8) return 'w';
@@ -629,7 +682,7 @@ class Profile {
     /****** Add or update series ******/
     let progress_points = this.getProgressPoints();
     let series_sel = plot_area_sel.selectAll('g.series')
-      .data(function(d) { return d.progress_points; }, function(d) { return d.name; });
+      .data((d) => d.progress_points, (d) => d.name);
     series_sel.enter().append('g');
     series_sel.attr('class', function(d, k) {
       // Use progress point's position in array to assign it a stable color, no matter
@@ -645,14 +698,14 @@ class Profile {
       .robustnessIterations(5);
 
     // Create an svg line to draw the loess curve
-    let line = d3.svg.line().x(function(d) { return xscale(d[0]); })
-                            .y(function(d) { return yscale(d[1]); })
+    let line = d3.svg.line().x((d) => xscale(d[0]))
+                            .y((d) => yscale(d[1]))
                             .interpolate('basis');
 
     // Apply the loess smoothing to each series, then draw the lines
-    let lines_sel = series_sel.selectAll('path').data(function(d) {
-      let xvals = d.measurements.map(function(e) { return e.speedup; });
-      let yvals = d.measurements.map(function(e) { return e.progress_speedup; });
+    let lines_sel = series_sel.selectAll('path.line').data(function(d) {
+      let xvals = d.measurements.map((e) => e.speedup);
+      let yvals = d.measurements.map((e) => e.progress_speedup);
       let smoothed_y: number[] = [];
       try {
         smoothed_y = loess(xvals, yvals);
@@ -665,22 +718,50 @@ class Profile {
       else return [d3.zip(xvals, yvals)];
     });
     lines_sel.enter().append('path');
-    lines_sel.attr('d', line);
+    // Update outside of enter() so the line gets re-drawn, in case scales change.
+    lines_sel.attr({'class': 'line', d: line});
     lines_sel.exit().remove();
 
+    /****** Add or update error bars ******/
+
+    function pointMouseover(d: Measurement, i: number): void {
+      d3.select(this).classed('highlight', true);
+      tip.show(d, i);
+    }
+    function pointMouseout(d: Measurement, i: number): void {
+      d3.select(this).classed('highlight', false);
+      tip.hide(d, i);
+    }
+
+    const error_bars_sel = series_sel.selectAll('path.error-bar').data((d) => d.measurements);
+    error_bars_sel.enter()
+      .append('path')
+      .attr({'class': 'error-bar'})
+      .on('mouseover', pointMouseover)
+      .on('mouseout', pointMouseout);
+    error_bars_sel.attr({d: (d) => {
+      const v = science.stats.variance(d.individual_progress_speedups);
+      const std_err = Math.sqrt(v);
+      const cx = d.speedup;
+      const cy = d.progress_speedup;
+      // Error bar. Draw the vertical line first, then the bottom horizontal line, then the top horizontal
+      // line.
+      // See https://codepen.io/AmeliaBR/full/pIder for details on SVG paths.
+      return `M${xscale(cx)},${yscale(cy-std_err)} L${xscale(cx)},${yscale(cy + std_err)} m${-radius},0 l${2*radius},0 M${xscale(cx) + 3},${yscale(cy - std_err)} l${-2*radius},0`;
+    }});
+    error_bars_sel.exit().remove();
+
     /****** Add or update points ******/
-    let points_sel = series_sel.selectAll('circle').data(function(d) { return d.measurements; });
-    points_sel.enter().append('circle').attr('r', radius);
-    points_sel.attr('cx', function(d) { return xscale(d.speedup); })
-              .attr('cy', function(d) { return yscale(d.progress_speedup); })
-              .on('mouseover', function(d, i) {
-                d3.select(this).classed('highlight', true);
-                tip.show(d, i);
-              })
-              .on('mouseout', function(d, i) {
-                d3.select(this).classed('highlight', false);
-                tip.hide(d, i);
-              });
+    let points_sel = series_sel.selectAll('circle').data((d) => d.measurements);
+    points_sel.enter()
+      .append('circle')
+      .on('mouseover', pointMouseover)
+      .on('mouseout', pointMouseout);
+    points_sel.attr({
+      r: radius,
+      cx: (d) => xscale(d.speedup),
+      cy: (d) => yscale(d.progress_speedup)
+    });
     points_sel.exit().remove();
   }
 }

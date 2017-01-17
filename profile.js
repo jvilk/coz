@@ -24,6 +24,30 @@ function getDataPoint(data) {
             return data.difference / arrivalRate;
     }
 }
+function getSpeedup(baseline, comparison) {
+    return (baseline - comparison) / baseline;
+}
+function getDataPointForPoint(point) {
+    switch (point.type) {
+        case 'latency-point':
+            return getDataPoint({
+                type: 'latency',
+                arrivals: point.arrivals,
+                departures: point.departures,
+                difference: point.difference,
+                duration: point.duration,
+                points: []
+            });
+        case 'throughput-point':
+        case 'progress-point':
+            return getDataPoint({
+                type: 'throughput',
+                delta: point.delta,
+                duration: point.duration,
+                points: []
+            });
+    }
+}
 /**
  * Are we trying to maximize or minimize this progress point?
  */
@@ -174,11 +198,14 @@ var Profile = (function () {
         var entry = this.ensureDataEntry(experiment.selected, point.name, experiment.speedup, {
             delta: 0,
             duration: 0,
-            type: 'throughput'
+            type: 'throughput',
+            points: []
         });
+        point.duration = experiment.duration;
         // Add new delta and duration to data
         entry.delta += point.delta;
         entry.duration += experiment.duration;
+        entry.points.push(point);
     };
     Profile.prototype.addLatencyMeasurement = function (experiment, point) {
         var entry = this.ensureDataEntry(experiment.selected, point.name, experiment.speedup, {
@@ -186,8 +213,11 @@ var Profile = (function () {
             departures: 0,
             difference: 0,
             duration: 0,
-            type: 'latency'
+            type: 'latency',
+            points: []
         });
+        point.duration = experiment.duration;
+        entry.points.push(point);
         entry.arrivals += point.arrivals;
         entry.departures += point.departures;
         // Compute a running weighted average of the difference between arrivals and departures
@@ -226,7 +256,7 @@ var Profile = (function () {
         for (var selected in this._data) {
             var points = [];
             var points_with_enough = 0;
-            progress_point_loop: for (var i = 0; i < progress_points.length; i++) {
+            var _loop_1 = function(i) {
                 // Set up an empty record for this progress point
                 var point = {
                     name: progress_points[i],
@@ -234,25 +264,26 @@ var Profile = (function () {
                 };
                 points.push(point);
                 // Get the data for this progress point, if any
-                var point_data = this._data[selected][progress_points[i]];
+                var point_data = this_1._data[selected][progress_points[i]];
                 // Check to be sure the point was observed and we have baseline (zero speedup) data
                 if (point_data !== undefined && point_data[0] !== undefined) {
                     // Compute the baseline data point
-                    var baseline_data_point = getDataPoint(point_data[0]);
+                    var baseline_data_point_1 = getDataPoint(point_data[0]);
                     var maximize = shouldMaximize(point_data[0]);
-                    if (!isValidDataPoint(baseline_data_point)) {
+                    if (!isValidDataPoint(baseline_data_point_1)) {
                         // Baseline data point is invalid (divide by zero, or a NaN)
-                        continue progress_point_loop;
+                        return "continue-progress_point_loop";
                     }
                     // Loop over measurements and compute progress speedups in D3-friendly format
                     var measurements = [];
                     for (var speedup in point_data) {
-                        var data_point = getDataPoint(point_data[speedup]);
+                        var exp_data = point_data[speedup];
+                        var data_point = getDataPoint(exp_data);
                         // Skip invalid data.
                         if (!isValidDataPoint(data_point)) {
                             continue;
                         }
-                        var progress_speedup = (baseline_data_point - data_point) / baseline_data_point;
+                        var progress_speedup = getSpeedup(baseline_data_point_1, data_point);
                         if (!maximize) {
                             // We are trying to *minimize* this progress point, so negate the speedup.
                             progress_speedup = -progress_speedup;
@@ -261,8 +292,14 @@ var Profile = (function () {
                         if (progress_speedup >= -1 && progress_speedup <= 2) {
                             // Add entry to measurements
                             measurements.push({
+                                name: point.name,
                                 speedup: +speedup,
-                                progress_speedup: progress_speedup
+                                progress_speedup: progress_speedup,
+                                raw_value: data_point,
+                                individual_progress_speedups: exp_data.points
+                                    .map(getDataPointForPoint)
+                                    .filter(isValidDataPoint)
+                                    .map(function (d) { return getSpeedup(baseline_data_point_1, d); })
                             });
                         }
                     }
@@ -273,6 +310,13 @@ var Profile = (function () {
                         points_with_enough++;
                         point.measurements = measurements;
                     }
+                }
+            };
+            var this_1 = this;
+            progress_point_loop: for (var i = 0; i < progress_points.length; i++) {
+                var state_1 = _loop_1(i);
+                switch(state_1) {
+                    case "continue-progress_point_loop": continue progress_point_loop;
                 }
             }
             if (points_with_enough > 0) {
@@ -381,8 +425,7 @@ var Profile = (function () {
             .attr('class', 'd3-tip')
             .offset([-5, 0])
             .html(function (d) {
-            return '<strong>Line Speedup:</strong> ' + percentFormat(d.speedup) + '<br>' +
-                '<strong>Progress Speedup:</strong> ' + percentFormat(d.progress_speedup);
+            return "<strong>Progress Point:</strong> " + d.name + "<br>\n                <strong>Line Speedup:</strong> " + percentFormat(d.speedup) + "<br>\n                <strong>Progress Speedup:</strong> " + percentFormat(d.progress_speedup) + "<br>\n                <strong>Data Points:</strong> " + d.individual_progress_speedups.length + "<br>\n                <strong>Raw Data:</strong> " + d.raw_value;
         })
             .direction(function (d) {
             if (d.speedup > 0.8)
@@ -539,7 +582,7 @@ var Profile = (function () {
             .y(function (d) { return yscale(d[1]); })
             .interpolate('basis');
         // Apply the loess smoothing to each series, then draw the lines
-        var lines_sel = series_sel.selectAll('path').data(function (d) {
+        var lines_sel = series_sel.selectAll('path.line').data(function (d) {
             var xvals = d.measurements.map(function (e) { return e.speedup; });
             var yvals = d.measurements.map(function (e) { return e.progress_speedup; });
             var smoothed_y = [];
@@ -556,20 +599,45 @@ var Profile = (function () {
                 return [d3.zip(xvals, yvals)];
         });
         lines_sel.enter().append('path');
-        lines_sel.attr('d', line);
+        // Update outside of enter() so the line gets re-drawn, in case scales change.
+        lines_sel.attr({ 'class': 'line', d: line });
         lines_sel.exit().remove();
-        /****** Add or update points ******/
-        var points_sel = series_sel.selectAll('circle').data(function (d) { return d.measurements; });
-        points_sel.enter().append('circle').attr('r', radius);
-        points_sel.attr('cx', function (d) { return xscale(d.speedup); })
-            .attr('cy', function (d) { return yscale(d.progress_speedup); })
-            .on('mouseover', function (d, i) {
+        /****** Add or update error bars ******/
+        function pointMouseover(d, i) {
             d3.select(this).classed('highlight', true);
             tip.show(d, i);
-        })
-            .on('mouseout', function (d, i) {
+        }
+        function pointMouseout(d, i) {
             d3.select(this).classed('highlight', false);
             tip.hide(d, i);
+        }
+        var error_bars_sel = series_sel.selectAll('path.error-bar').data(function (d) { return d.measurements; });
+        error_bars_sel.enter()
+            .append('path')
+            .attr({ 'class': 'error-bar' })
+            .on('mouseover', pointMouseover)
+            .on('mouseout', pointMouseout);
+        error_bars_sel.attr({ d: function (d) {
+                var v = science.stats.variance(d.individual_progress_speedups);
+                var std_err = Math.sqrt(v);
+                var cx = d.speedup;
+                var cy = d.progress_speedup;
+                // Error bar. Draw the vertical line first, then the bottom horizontal line, then the top horizontal
+                // line.
+                // See https://codepen.io/AmeliaBR/full/pIder for details on SVG paths.
+                return "M" + xscale(cx) + "," + yscale(cy - std_err) + " L" + xscale(cx) + "," + yscale(cy + std_err) + " m" + -radius + ",0 l" + 2 * radius + ",0 M" + (xscale(cx) + 3) + "," + yscale(cy - std_err) + " l" + -2 * radius + ",0";
+            } });
+        error_bars_sel.exit().remove();
+        /****** Add or update points ******/
+        var points_sel = series_sel.selectAll('circle').data(function (d) { return d.measurements; });
+        points_sel.enter()
+            .append('circle')
+            .on('mouseover', pointMouseover)
+            .on('mouseout', pointMouseout);
+        points_sel.attr({
+            r: radius,
+            cx: function (d) { return xscale(d.speedup); },
+            cy: function (d) { return yscale(d.progress_speedup); }
         });
         points_sel.exit().remove();
     };
