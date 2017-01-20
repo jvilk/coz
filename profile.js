@@ -256,7 +256,7 @@ var Profile = (function () {
         for (var selected in this._data) {
             var points = [];
             var points_with_enough = 0;
-            var _loop_1 = function(i) {
+            var _loop_1 = function (i) {
                 // Set up an empty record for this progress point
                 var point = {
                     name: progress_points[i],
@@ -271,7 +271,6 @@ var Profile = (function () {
                     var baseline_data_point_1 = getDataPoint(point_data[0]);
                     var maximize = shouldMaximize(point_data[0]);
                     if (!isValidDataPoint(baseline_data_point_1)) {
-                        // Baseline data point is invalid (divide by zero, or a NaN)
                         return "continue-progress_point_loop";
                     }
                     // Loop over measurements and compute progress speedups in D3-friendly format
@@ -315,7 +314,7 @@ var Profile = (function () {
             var this_1 = this;
             progress_point_loop: for (var i = 0; i < progress_points.length; i++) {
                 var state_1 = _loop_1(i);
-                switch(state_1) {
+                switch (state_1) {
                     case "continue-progress_point_loop": continue progress_point_loop;
                 }
             }
@@ -593,7 +592,8 @@ var Profile = (function () {
             }
             // Speedup is always zero for a line speedup of zero
             smoothed_y[0] = 0;
-            if (xvals.length > 5)
+            // smoothed_y sometimes has NaN, which throws things off.
+            if (xvals.length > 5 && smoothed_y.filter(function (y) { return isNaN(y); }).length === 0)
                 return [d3.zip(xvals, smoothed_y)];
             else
                 return [d3.zip(xvals, yvals)];

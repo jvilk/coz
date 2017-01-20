@@ -714,7 +714,8 @@ class Profile {
       }
       // Speedup is always zero for a line speedup of zero
       smoothed_y[0] = 0;
-      if (xvals.length > 5) return [d3.zip(xvals, smoothed_y)];
+      // smoothed_y sometimes has NaN, which throws things off.
+      if (xvals.length > 5 && smoothed_y.filter((y) => isNaN(y)).length === 0) return [d3.zip(xvals, smoothed_y)];
       else return [d3.zip(xvals, yvals)];
     });
     lines_sel.enter().append('path');
