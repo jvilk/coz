@@ -92,6 +92,18 @@ function getDataPoint(data: ExperimentData): number {
   }
 }
 
+/**
+ * Formats the title of a graph.
+ * Removes everything but the script in URLs so that function names appear.
+ */
+function formatTitle(t: string): string {
+  const lastSlash = t.lastIndexOf('/');
+  if (lastSlash !== -1) {
+    return t.slice(lastSlash + 1);
+  }
+  return t;
+}
+
 function getSpeedup(baseline: number, comparison: number) {
   return (baseline - comparison) / baseline;
 }
@@ -570,7 +582,7 @@ class Profile {
     }
 
     /****** Insert, remove, and update plot titles ******/
-    let plot_title_sel = plot_div_sel.selectAll('div.plot-title').data(function(d) { return [d.name]; });
+    let plot_title_sel = plot_div_sel.selectAll('div.plot-title').data(function(d) { return [formatTitle(d.name)]; });
     plot_title_sel.enter().append('div').attr('class', 'plot-title');
     plot_title_sel.text(function(d) { return d; })
                   .classed('path', true)

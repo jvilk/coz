@@ -24,6 +24,17 @@ function getDataPoint(data) {
             return data.difference / arrivalRate;
     }
 }
+/**
+ * Formats the title of a graph.
+ * Removes everything but the script in URLs so that function names appear.
+ */
+function formatTitle(t) {
+    var lastSlash = t.lastIndexOf('/');
+    if (lastSlash !== -1) {
+        return t.slice(lastSlash + 1);
+    }
+    return t;
+}
 function getSpeedup(baseline, comparison) {
     return (baseline - comparison) / baseline;
 }
@@ -466,7 +477,7 @@ var Profile = (function () {
                 .style('top', plot_y_pos);
         }
         /****** Insert, remove, and update plot titles ******/
-        var plot_title_sel = plot_div_sel.selectAll('div.plot-title').data(function (d) { return [d.name]; });
+        var plot_title_sel = plot_div_sel.selectAll('div.plot-title').data(function (d) { return [formatTitle(d.name)]; });
         plot_title_sel.enter().append('div').attr('class', 'plot-title');
         plot_title_sel.text(function (d) { return d; })
             .classed('path', true)
