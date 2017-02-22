@@ -27,13 +27,18 @@ function getDataPoint(data) {
 /**
  * Formats the title of a graph.
  * Removes everything but the script in URLs so that function names appear.
+ * Also strips out ? parameters from URL.
  */
 function formatTitle(t) {
-    var lastSlash = t.lastIndexOf('/');
-    if (lastSlash !== -1) {
-        return t.slice(lastSlash + 1);
+    var lastSlash = t.lastIndexOf('/') + 1;
+    if (lastSlash === -1) {
+        lastSlash = 0;
     }
-    return t;
+    var cutoff = t.indexOf('?', lastSlash);
+    if (cutoff === -1) {
+        cutoff = t.indexOf(' ', lastSlash) - 1;
+    }
+    return t.slice(lastSlash, cutoff) + " " + t.slice(t.indexOf(' ', cutoff));
 }
 function getSpeedup(baseline, comparison) {
     return (baseline - comparison) / baseline;
