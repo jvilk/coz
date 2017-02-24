@@ -4,11 +4,12 @@
         "target": "es5",
         "noImplicitAny": true,
         "sourceMap": true,
-        "lib": ["dom", "es2015"],
+        "lib": ["webworker", "es2015"],
+        "types": [],
         "outDir": "obj"
     },
     "include": [
-        "src/shared/**/*.ts",
-        "src/ui/**/*.ts"
+      "src/shared/**/*.ts",
+      "src/worker/**/*.ts"
     ]
 }

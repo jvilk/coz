@@ -42,8 +42,8 @@ text.ytitle {
   font-size: 12px;
 }
 
-.xgrid .tick,
-.ygrid .tick {
+.xgrid .tick line,
+.ygrid .tick line {
   stroke: #ddd;
   stroke-width: 1;
   shape-rendering: crispEdges;

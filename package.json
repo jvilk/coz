@@ -7,7 +7,16 @@
     "url": "git+https://github.com/jvilk/Coz.git"
   },
   "scripts": {
-    "prepublish": "tsc"
+    "prepublish": "npm-run-all -s build:ui build:worker -p rollup:worker rollup:ui",
+    "watch": "npm-run-all -s prepublish -p watch:tsc:ui watch:tsc:worker watch:rollup:ui watch:rollup:worker",
+    "build:ui": "tsc -p tsconfig.json",
+    "watch:tsc:ui": "tsc -w -p tsconfig.json",
+    "build:worker": "tsc -p tsconfig.worker.json",
+    "watch:tsc:worker": "tsc -w -p tsconfig.worker.json",
+    "rollup:worker": "rollup -m -c rollup.worker.config.js",
+    "watch:rollup:worker": "rollup -w -m -c rollup.worker.config.js",
+    "rollup:ui": "rollup -m -c rollup.config.js",
+    "watch:rollup:ui": "rollup -w -m -c rollup.config.js"
   },
   "license": "BSD-2-Clause",
   "bugs": {
@@ -16,8 +25,12 @@
   "homepage": "https://github.com/jvilk/Coz#readme",
   "devDependencies": {
     "@types/bootstrap": "^3.3.32",
-    "@types/d3": "^3.5.36",
+    "@types/d3": "^4.5",
     "@types/jquery": "^2.0.33",
-    "typescript": "^2.0.3"
+    "npm-run-all": "^4.0.2",
+    "rollup": "^0.41.4",
+    "rollup-plugin-buble": "^0.15.0",
+    "rollup-watch": "^3.2.2",
+    "typescript": "^2.2"
   }
 }

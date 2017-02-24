@@ -101,16 +101,31 @@
       </div> <!-- /modal-dialog -->
     </div> <!-- /modal -->
 
+    <!-- File loading dialog (hidden) -->
+    <div class="modal fade" id="profile-loading-dlg" tabindex="-1" role="dialog" aria-labelledby="profile-loading-dlg-title" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h4 class="modal-title" id="load-profile-dlg-title">Loading selected profile...</h4>
+          </div> <!-- /modal-header -->
+          <div class="modal-body">
+            <div class="text-center">
+              <div class="progress">
+                <div class="progress-bar" id="profile-loading-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">
+                </div>
+              </div>
+            </div> <!-- /text-center -->
+          </div> <!-- /modal-body -->
+        </div> <!-- /modal-content -->
+      </div> <!-- /modal-dialog -->
+    </div> <!-- /modal -->
+
     <script src="lib/jquery.min.js"></script>
     <script src="lib/bootstrap/bootstrap.min.js"></script>
     <script src="lib/d3/d3.min.js"></script>
     <script src="lib/d3/d3-tip.min.js"></script>
     <script src="lib/science/science.v1.min.js"></script>
 
-    <!-- Causal profile loading and plotting code -->
-    <script src="profile.js"></script>
-
-    <!-- The UI code -->
-    <script src="ui.js"></script>
+    <script src="build/ui.js"></script>
   </body>
 </html>

@@ -1,3 +1,7 @@
+import {d3} from './d3-tip';
+import Profile from './profile';
+import {ErrorMessage} from '../shared/interfaces';
+
 // Ensure the brower supports the File API
 if (!(<any> window).File || !(<any> window).FileReader) {
   alert('The File APIs are not fully supported in this browser.');
@@ -6,7 +10,7 @@ if (!(<any> window).File || !(<any> window).FileReader) {
 let current_profile: Profile = undefined;
 
 function get_min_points(): number {
-  return (<any> d3.select('#minpoints_field').node()).value;
+  return +d3.select<HTMLInputElement, null>('#minpoints_field').node().value;
 }
 
 function display_warning(title: string, text: string): void {
@@ -25,17 +29,33 @@ function display_warning(title: string, text: string): void {
   }, 5000);
 }
 
+function create_profile(files: (Blob | File)[], cb: (p?: Profile) => void): void {
+  const bar = $('#profile-loading-bar').attr('aria-valuenow', '0');
+  const modal = $('#profile-loading-dlg').modal('show');
+  Profile.createProfile(files, d3.select<HTMLDivElement, null>('#plot-area'), d3.select<HTMLDivElement, null>('#legend'), get_min_points, display_warning, (e, p?) => {
+    modal.modal('hide');
+    if (e) {
+      display_warning(`Error`, `Could not parse profile: ${e.msg}<br />${e.stack}`);
+    } else {
+      cb(p);
+    }
+  }, (p) => {
+    bar.css('width', `${p.percent}%`)
+      .text(`[${p.percent}%] ${p.msg}`);
+  });
+}
+
 function update(resize?: boolean) {
   if (current_profile === undefined) return;
 
   // Enable the sortby field
   d3.select('#sortby_field').attr('disabled', null);
 
-  // Draw plots
-  current_profile.drawPlots(resize);
-
   // Draw the legend
   current_profile.drawLegend();
+
+  // Draw plots
+  current_profile.drawPlots(resize);
 
   let tooltip = d3.select("body")
   	.append("div")
@@ -45,9 +65,10 @@ function update(resize?: boolean) {
 
   // Shorten path strings
   let paths = d3.selectAll('.path')
-    .classed('path', false).classed('shortpath', true)
+    .classed('path', false)
+    .classed('shortpath', true)
     .text(function(d) {
-      let parts = d.split('/');
+      let parts = (<string> d).split('/');
       let filename = parts[parts.length-1];
       return filename;
     });
@@ -68,7 +89,7 @@ d3.select('#load-profile-browse-btn').on('click', function() {
 });
 
 // Set a handler for file selection
-d3.select('#load-profile-file').on('change', function() {
+d3.select<HTMLInputElement, null>('#load-profile-file').on('change', function() {
   let file_browser = this;
   let open_button = d3.select('#load-profile-open-btn');
 
@@ -76,27 +97,22 @@ d3.select('#load-profile-file').on('change', function() {
 
   open_button.classed('disabled', false)
     .on('click', function() {
-      var reader = new FileReader();
-      reader.onload = function(event) {
-        let contents: string = (<any> event.target).result;
-        current_profile = new Profile(contents, d3.select('#plot-area'), d3.select('#legend'), get_min_points, display_warning);
+      const files: File[] = [];
+      const fileList = file_browser.files;
+      for (let i = 0; i < fileList.length; i++) {
+        files.push(fileList[i]);
+      }
+      create_profile(files, (p) => {
+        current_profile = p;
         update();
-      };
-
-      reader.onerror = function(event) {
-        console.error("Unable to read file. Error code: " + (<any> event.target).error.code);
-      };
-
-      // Read the profile
-      reader.readAsText(file_browser.files[0]);
-
+      });
       // Clear the file browser value
       file_browser.value = '';
     });
 });
 
 // Update the plots and minpoints display when dragged or clicked
-d3.select('#minpoints_field').on('input', function() {
+d3.select<HTMLInputElement, null>('#minpoints_field').on('input', function() {
   d3.select('#minpoints_display').text(this.value);
   update();
 });
@@ -121,10 +137,12 @@ let samples_sel = d3.select('#samples').selectAll('.sample-profile').data(sample
         sel.attr('loaded', 'yes');
         const xhr = new XMLHttpRequest();
         xhr.open('GET', `profiles/${d}.coz`);
+        xhr.responseType = 'arraybuffer';
         xhr.onload = function() {
-          current_profile = sample_profile_objects[d] =
-            new Profile(xhr.responseText, d3.select('#plot-area'), d3.select('#legend'), get_min_points, display_warning);
-          update();
+          create_profile([new Blob([xhr.response])], (p) => {
+            current_profile = sample_profile_objects[d] = p;
+            update();
+          });
         };
         xhr.onerror = function() {
           sel.attr('loaded', 'no');
