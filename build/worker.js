@@ -1,6 +1,7 @@
 (function () {
 'use strict';
 
+importScripts('/lib/pako/pako_inflate.min.js');
 var SAMPLES = 512;
 /**
  * Resample of data.length data points from data with replacement.
@@ -79,8 +80,8 @@ function calculateSpeedupInternal(baseline, comparison, calculateSpeedup) {
     if (baseline.length === 1 && comparison.length === 1) {
         return {
             value: rawSpeedup,
-            conf_left: 0,
-            conf_right: 0
+            conf_left: rawSpeedup,
+            conf_right: rawSpeedup
         };
     }
     var sampleDist = getSampleDistribution(SAMPLES, baseline, comparison, calculateSpeedup)
@@ -216,8 +217,20 @@ function parseProfile(profiles) {
     var profileData = {};
     var reader = new FileReaderSync();
     var profileValue = 70 / numProfiles;
+    var profile = profiles[0];
+    var isCompressed = false;
+    if (profile instanceof File) {
+        isCompressed = profile.name.endsWith(".gz");
+    }
+    var profileString;
+    if (isCompressed) {
+        profileString = reader.readAsText(new Blob([pako.inflate(new Uint8Array(reader.readAsArrayBuffer(profiles[0]))).buffer]), "UTF-8");
+    }
+    else {
+        profileString = reader.readAsText(profiles[0], "UTF-8");
+    }
     for (var i = 0; i < numProfiles; i++) {
-        parseFile(i + 1, numProfiles, reader.readAsText(profiles[0]), profileData, profileValue * i, profileValue * (i + 1));
+        parseFile(i + 1, numProfiles, profileString, profileData, profileValue * i, profileValue * (i + 1));
     }
     var locations = Object.keys(profileData);
     var numLocations = locations.length;
@@ -237,11 +250,8 @@ function parseProfile(profiles) {
             // Ignore data that lacks a baseline.
             if (baseline) {
                 var type = baseline.type;
-                baseline.speedup = {
-                    value: 0,
-                    conf_left: 0,
-                    conf_right: 0
-                };
+                // Compare baseline with itself to form confidence bounds.
+                baseline.speedup = calculateSpeedup(type, baseline.points, baseline.points);
                 var speedups = Object.keys(ppData).map(function (k) { return parseFloat(k); });
                 // speedups
                 for (var _a = 0, speedups_1 = speedups; _a < speedups_1.length; _a++) {

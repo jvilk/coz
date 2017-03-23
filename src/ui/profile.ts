@@ -15,6 +15,7 @@ interface Point {
 interface Measurement {
   speedup: number;
   progress_speedup: Speedup;
+  num_points: number;
 }
 
 /**
@@ -29,7 +30,7 @@ function formatTitle(t: string): string {
   }
   let cutoff = t.indexOf('?', lastSlash);
   if (cutoff === -1) {
-    cutoff = t.indexOf(' ', lastSlash) - 1;
+    cutoff = t.indexOf(' ', lastSlash);
   }
   return `${t.slice(lastSlash, cutoff)} ${t.slice(t.indexOf(' ', cutoff))}`;
 }
@@ -173,6 +174,37 @@ export default class Profile {
     return this._progress_points = points.sort();
   }
 
+/*  public getBadDataPoints(): ExperimentResult[] {
+    let result = new Array<ExperimentResult>();
+    for (let selected in this._data) {
+      const selectedData = this._data[selected];
+      const experimentResult: ExperimentResult = {
+        name: selected,
+        progress_points: []
+      };
+      for (let pp in selectedData) {
+        const ppData = selectedData[pp];
+        if (!ppData[0]) {
+          continue;
+        }
+        const point: Point = {
+          name: pp,
+          measurements: []
+        };
+        for (let speedup in ppData) {
+          const sData = ppData[+speedup];
+          if (sData.type === 'throughput' && speedup !== '0') {
+            const dataPoints = sData.points;
+            for (const dataPoint of dataPoints) {
+
+              dataPoint.duration;
+            }
+          }
+        }
+      }
+    }
+  }*/
+
   /**
    * Returns relevant speedup data given:
    * - The desired minimum number of points.
@@ -206,7 +238,8 @@ export default class Profile {
               // Add entry to measurements
               measurements.push({
                 speedup: +speedup,
-                progress_speedup: progress_speedup
+                progress_speedup: progress_speedup,
+                num_points: point_data[speedup].points.length
               });
             }
           }
@@ -333,7 +366,9 @@ export default class Profile {
       .offset([-5, 0])
       .html(function (d: Measurement) {
         return `<strong>Line Speedup:</strong> ${percentFormat(d.speedup)}<br>
-                <strong>Progress Speedup:</strong> ${percentFormat(d.progress_speedup.value)}<br>`;
+                <strong>Progress Speedup:</strong> ${percentFormat(d.progress_speedup.value)}<br>
+                <strong>95% Confidence:</strong> (${percentFormat(d.progress_speedup.conf_left)}, ${percentFormat(d.progress_speedup.conf_right)})<br>
+                <strong>Data Points:</strong> ${d.num_points}`;
       })
       .direction(function (d: Measurement) {
         // Fast west if near top or right of graph.

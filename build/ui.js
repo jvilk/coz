@@ -5,8 +5,12 @@
  * Hack to work around broken d3-tip typings.
  */
 var d3 = _d3;
-//# sourceMappingURL=d3-tip.js.map
 
+/**
+ * Formats the title of a graph.
+ * Removes everything but the script in URLs so that function names appear.
+ * Also strips out ? parameters from URL.
+ */
 function formatTitle(t) {
     var lastSlash = t.lastIndexOf('/') + 1;
     if (lastSlash === -1) {
@@ -14,7 +18,7 @@ function formatTitle(t) {
     }
     var cutoff = t.indexOf('?', lastSlash);
     if (cutoff === -1) {
-        cutoff = t.indexOf(' ', lastSlash) - 1;
+        cutoff = t.indexOf(' ', lastSlash);
     }
     return t.slice(lastSlash, cutoff) + " " + t.slice(t.indexOf(' ', cutoff));
 }
@@ -155,6 +159,36 @@ var Profile = (function () {
         // Stable order.
         return this._progress_points = points.sort();
     };
+    /*  public getBadDataPoints(): ExperimentResult[] {
+        let result = new Array<ExperimentResult>();
+        for (let selected in this._data) {
+          const selectedData = this._data[selected];
+          const experimentResult: ExperimentResult = {
+            name: selected,
+            progress_points: []
+          };
+          for (let pp in selectedData) {
+            const ppData = selectedData[pp];
+            if (!ppData[0]) {
+              continue;
+            }
+            const point: Point = {
+              name: pp,
+              measurements: []
+            };
+            for (let speedup in ppData) {
+              const sData = ppData[+speedup];
+              if (sData.type === 'throughput' && speedup !== '0') {
+                const dataPoints = sData.points;
+                for (const dataPoint of dataPoints) {
+    
+                  dataPoint.duration;
+                }
+              }
+            }
+          }
+        }
+      }*/
     /**
      * Returns relevant speedup data given:
      * - The desired minimum number of points.
@@ -189,7 +223,8 @@ var Profile = (function () {
                             // Add entry to measurements
                             measurements.push({
                                 speedup: +speedup,
-                                progress_speedup: progress_speedup
+                                progress_speedup: progress_speedup,
+                                num_points: point_data[speedup].points.length
                             });
                         }
                     }
@@ -303,7 +338,7 @@ var Profile = (function () {
             .attr('class', 'd3-tip')
             .offset([-5, 0])
             .html(function (d) {
-            return "<strong>Line Speedup:</strong> " + percentFormat(d.speedup) + "<br>\n                <strong>Progress Speedup:</strong> " + percentFormat(d.progress_speedup.value) + "<br>";
+            return "<strong>Line Speedup:</strong> " + percentFormat(d.speedup) + "<br>\n                <strong>Progress Speedup:</strong> " + percentFormat(d.progress_speedup.value) + "<br>\n                <strong>95% Confidence:</strong> (" + percentFormat(d.progress_speedup.conf_left) + ", " + percentFormat(d.progress_speedup.conf_right) + ")<br>\n                <strong>Data Points:</strong> " + d.num_points;
         })
             .direction(function (d) {
             // Fast west if near top or right of graph.
@@ -554,7 +589,6 @@ var Profile = (function () {
 Profile._onProfileReceived = null;
 Profile._onProgress = null;
 Profile.initializeWorker();
-//# sourceMappingURL=profile.js.map
 
 // Ensure the brower supports the File API
 if (!window.File || !window.FileReader) {

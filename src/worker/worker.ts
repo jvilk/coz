@@ -1,6 +1,9 @@
 import {ProfileData, LatencyData, LatencyPoint, ThroughputData, ThroughputPoint, Speedup,
         RawExperimentLine, RawLatencyPointLine, RawLine, RawThroughputPointLine, MessageFromWorker,
         ProgressMessage, MessageToWorker, FilesMessage} from '../shared/interfaces';
+import * as TPako from 'pako';
+declare var pako: typeof TPako;
+importScripts('/lib/pako/pako_inflate.min.js');
 
 const SAMPLES = 512;
 
@@ -88,8 +91,8 @@ function calculateSpeedupInternal<T>(baseline: T[], comparison: T[], calculateSp
   if (baseline.length === 1 && comparison.length === 1) {
     return {
       value: rawSpeedup,
-      conf_left: 0,
-      conf_right: 0
+      conf_left: rawSpeedup,
+      conf_right: rawSpeedup
     };
   }
   const sampleDist = getSampleDistribution(SAMPLES, baseline, comparison, calculateSpeedup)
@@ -243,8 +246,20 @@ function parseProfile(profiles: (File | Blob)[]): ProfileData {
   const profileData: ProfileData = {};
   const reader = new FileReaderSync();
   const profileValue = 70 / numProfiles;
+  const profile = profiles[0];
+  let isCompressed = false;
+  if (profile instanceof File) {
+    isCompressed = profile.name.endsWith(".gz");
+  }
+  let profileString: string;
+  if (isCompressed) {
+    profileString = reader.readAsText(new Blob([pako.inflate(new Uint8Array(reader.readAsArrayBuffer(profiles[0]))).buffer]), "UTF-8");
+  } else {
+    profileString = reader.readAsText(profiles[0], "UTF-8");
+  }
+
   for (let i = 0; i < numProfiles; i++) {
-    parseFile(i + 1, numProfiles, reader.readAsText(profiles[0]), profileData, profileValue * i, profileValue * (i + 1));
+    parseFile(i + 1, numProfiles, profileString, profileData, profileValue * i, profileValue * (i + 1));
   }
 
   const locations = Object.keys(profileData);
@@ -264,11 +279,8 @@ function parseProfile(profiles: (File | Blob)[]): ProfileData {
       // Ignore data that lacks a baseline.
       if (baseline) {
         const type = baseline.type;
-        baseline.speedup = {
-          value: 0,
-          conf_left: 0,
-          conf_right: 0
-        };
+        // Compare baseline with itself to form confidence bounds.
+        baseline.speedup = calculateSpeedup(type, baseline.points, baseline.points);
         const speedups = Object.keys(ppData).map((k) => parseFloat(k));
         // speedups
         for (const speedup of speedups) {
