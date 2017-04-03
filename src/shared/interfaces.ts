@@ -68,7 +68,7 @@ export type DataPoint = ThroughputPoint | LatencyPoint;
 /**
  * A line from a profile read from disk in object form.
  */
-export type RawLine = RawExperimentLine | RawThroughputPointLine | RawLatencyPointLine;
+export type RawLine = RawExperimentLine | RawThroughputPointLine | RawLatencyPointLine | RawCausalProfileLine;
 
 /**
  * A line from the raw profile beginning with 'experiment' in object form.
@@ -84,6 +84,8 @@ export interface RawExperimentLine {
   selected: string;
   speedup: number;
   duration: number;
+  raw_duration?: number;
+  samples?: number;
 }
 
 /**
@@ -118,6 +120,14 @@ export interface RawLatencyPointLine {
   arrivals: number;
   departures: number;
   difference: number;
+}
+
+/**
+ * causal_profile  profiler_script_id=54   sampling_rate=0.25      effective_sampling_rate=945769
+ */
+export interface RawCausalProfileLine {
+  type: 'causal_profile';
+  effective_sampling_rate: number;
 }
 
 /**

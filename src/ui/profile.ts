@@ -18,6 +18,10 @@ interface Measurement {
   num_points: number;
 }
 
+function IDENTITY<T>(d: T): T {
+  return d;
+}
+
 /**
  * Formats the title of a graph.
  * Removes everything but the script in URLs so that function names appear.
@@ -39,13 +43,25 @@ function getSpeedup(baseline: number, comparison: number) {
   return (baseline - comparison) / baseline;
 }
 
-function max_normalized_area(d: ExperimentResult): number {
+function get_average_value(m: Measurement): number {
+  return m.progress_speedup.value;
+}
+
+function get_lowest_95conf_value(m: Measurement): number {
+  return m.progress_speedup.conf_left;
+}
+
+function get_highest_95conf_value(m: Measurement): number {
+  return m.progress_speedup.conf_right;
+}
+
+function max_normalized_area(d: ExperimentResult, get_value: (m: Measurement) => number): number {
   let max_normalized_area = 0;
   for (let point of d.progress_points) {
     let area = 0;
     let prev_data = point.measurements[0];
     for (let current_data of point.measurements) {
-      let avg_progress_speedup = (prev_data.progress_speedup.value + current_data.progress_speedup.value) / 2;
+      let avg_progress_speedup = (get_value(prev_data) + get_value(current_data)) / 2;
       area += avg_progress_speedup * (current_data.speedup - prev_data.speedup);
       let normalized_area = area / current_data.speedup;
       if (normalized_area > max_normalized_area) max_normalized_area = normalized_area;
@@ -84,7 +100,12 @@ const sort_functions: {[name: string]: (a: ExperimentResult, b: ExperimentResult
   },
 
   impact: function(a: ExperimentResult, b: ExperimentResult): number {
-    if (max_normalized_area(b) > max_normalized_area(a)) return 1;
+    if (max_normalized_area(b, get_average_value) > max_normalized_area(a, get_average_value)) return 1;
+    else return -1;
+  },
+
+  pessimal_impact: function(a: ExperimentResult, b: ExperimentResult): number {
+    if (max_normalized_area(b, get_lowest_95conf_value) > max_normalized_area(a, get_lowest_95conf_value)) return 1;
     else return -1;
   },
 
@@ -98,6 +119,13 @@ const sort_functions: {[name: string]: (a: ExperimentResult, b: ExperimentResult
     else return -1;
   }
 };
+
+function hideHideButtons() {
+  // Hide all hide buttons.
+  $('.hide-btn').css('display', 'none');
+  // Remove blur.
+  $('.plot > svg').css('filter', 'none');
+}
 
 export default class Profile {
   private static worker: Worker;
@@ -152,6 +180,8 @@ export default class Profile {
   private _get_min_points: () => number;
   private _display_warning: (title: string, msg: string) => void;
   private _progress_points: string[] = null;
+  // Program fragments that should not be plotted.
+  private _hidden_plots: {[program_fragment: string]: boolean} = {};
   private constructor(data: ProfileData, container: d3.Selection<HTMLDivElement, null, HTMLDivElement, null>, legend: d3.Selection<HTMLDivElement, null, HTMLDivElement, null>, get_min_points: () => number, display_warning: (title: string, msg: string) => void) {
     this._data = data;
     this._plot_container = container;
@@ -174,46 +204,31 @@ export default class Profile {
     return this._progress_points = points.sort();
   }
 
-/*  public getBadDataPoints(): ExperimentResult[] {
-    let result = new Array<ExperimentResult>();
-    for (let selected in this._data) {
-      const selectedData = this._data[selected];
-      const experimentResult: ExperimentResult = {
-        name: selected,
-        progress_points: []
-      };
-      for (let pp in selectedData) {
-        const ppData = selectedData[pp];
-        if (!ppData[0]) {
-          continue;
-        }
-        const point: Point = {
-          name: pp,
-          measurements: []
-        };
-        for (let speedup in ppData) {
-          const sData = ppData[+speedup];
-          if (sData.type === 'throughput' && speedup !== '0') {
-            const dataPoints = sData.points;
-            for (const dataPoint of dataPoints) {
+  public getHiddenPlots(): string[] {
+    return Object.keys(this._hidden_plots).sort();
+  }
 
-              dataPoint.duration;
-            }
-          }
-        }
-      }
-    }
-  }*/
+  public hidePlot(program_fragment: string): void {
+    this._hidden_plots[program_fragment] = true;
+  }
+
+  public unhidePlot(program_fragment: string): void {
+    delete this._hidden_plots[program_fragment];
+  }
 
   /**
    * Returns relevant speedup data given:
    * - The desired minimum number of points.
    * - The currently enabled progress points.
+   * - The currently ignored functions / lines.
    */
   public getSpeedupData(min_points: number): ExperimentResult[] {
     const progress_points = this.getProgressPoints().filter((pp) => this._disabled_progress_points.indexOf(pp) === -1);
     let result: ExperimentResult[] = [];
     for (let selected in this._data) {
+      if (this._hidden_plots[selected]) {
+        continue;
+      }
       let points: Point[] = [];
       let points_with_enough = 0;
       for (let i = 0; i < progress_points.length; i++) {
@@ -298,10 +313,30 @@ export default class Profile {
         });
     legend_entries_sel.append('span')
       .attr('class', 'path')
-      .text((d) => d);
+      .text(IDENTITY);
+
+    const hidden_plots = this.getHiddenPlots();
+    let hidden_plots_select = d3.select<HTMLSelectElement, null>('#hidden_plots_select');
+    let hidden_plots_list = hidden_plots_select.selectAll<HTMLOptionElement, string>('option').data(hidden_plots);
+
+    //.data(hidden_plots);
+    hidden_plots_list.exit().remove();
+    hidden_plots_list.enter()
+        .append('option')
+        .text(IDENTITY)
+      .merge(hidden_plots_list);
+    const hidden_plots_btn = d3.select<HTMLButtonElement, null>('#hidden_plots_btn');
+    if (hidden_plots.length === 0) {
+      hidden_plots_btn.attr('disabled', 'disabled');
+      hidden_plots_select.attr('disabled', 'disabled');
+    } else {
+      hidden_plots_btn.attr('disabled', null);
+      hidden_plots_select.attr('disabled', null);
+    }
   }
 
   public drawPlots(no_animate: boolean): void {
+    const profile = this;
     const container = this._plot_container;
     const min_points = this._get_min_points();
     const speedup_data = this.getSpeedupData(min_points);
@@ -394,6 +429,8 @@ export default class Profile {
     plot_div_sel.exit().transition().duration(200)
       .style('opacity', 0).remove();
 
+    hideHideButtons();
+
     // Insert new divs with zero opacity
     plot_div_sel = plot_div_sel.enter()
         .append('div')
@@ -401,6 +438,40 @@ export default class Profile {
         .style('margin-bottom', -div_height+'px')
         .style('opacity', 0)
         .style('width', div_width)
+        .each(function(d) {
+          d3.select(this)
+            .append('button')
+            .attr('type', 'button')
+            .attr('class', 'btn btn-primary hide-btn')
+            .style('position', 'absolute')
+            .style('display', 'none')
+            .style('z-index', '10')
+            .text('Hide Plot')
+            .on('click', function() {
+              const self = <HTMLElement> this;
+              const parent = d3.select(<HTMLElement> self.parentNode);
+              const data = <ExperimentResult> parent.datum();
+              profile.hidePlot(data.name);
+              profile.drawPlots(false);
+              profile.drawLegend();
+            });
+        })
+        .on('click', function(d) {
+          const self = $(this);
+          const svg = self.children('svg');
+          const isSelected = svg.css('filter') !== 'none';
+          hideHideButtons();
+          // Clicking a selected plot will just unselect it.
+          if (!isSelected) {
+            // Show + center the button
+            const btn = self.children('.hide-btn');
+            btn.css('display', 'inline')
+               .css('left', (self.width() / 2) - (btn.width() / 2) + 'px')
+               .css('top', (self.height() / 2) - (btn.height() / 2) + 'px');
+            // Blur the plot
+            svg.css('filter', 'blur(5px)');
+          }
+        })
       .merge(plot_div_sel);
 
     // Sort remaining plots by the chosen sorting function
@@ -424,7 +495,7 @@ export default class Profile {
     plot_title_sel = plot_title_sel.enter().append('div')
           .attr('class', 'plot-title')
         .merge(plot_title_sel)
-          .text((d) => d)
+          .text(IDENTITY)
           .classed('path', true)
           .style('width', div_width+'px');
 

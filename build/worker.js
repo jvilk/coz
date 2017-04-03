@@ -124,6 +124,9 @@ function parseLine(s) {
             case 'arrivals':
             case 'departures':
             case 'difference':
+            case 'raw_duration':
+            case 'samples':
+            case 'effective_sampling_rate':
                 value = parseInt(value, 10);
                 break;
             case 'speedup':
@@ -164,6 +167,8 @@ function parseFile(fileNum, totalFiles, f, profileData, startPercent, endPercent
     var experiment = null;
     var counter = 0;
     var lastUpdate = performance.now();
+    var effectiveSamplingRate = -1;
+    var skipExperiment = false;
     var valuePerChar = len / (endPercent - startPercent);
     // Note: Iterate to <= len; special case when i === len.
     for (var i = 0; i <= len; i++) {
@@ -171,13 +176,20 @@ function parseFile(fileNum, totalFiles, f, profileData, startPercent, endPercent
             var line = parseLine(f.slice(lineStart, i));
             if (line && line.type) {
                 switch (line.type) {
+                    case 'causal_profile':
+                        effectiveSamplingRate = line.effective_sampling_rate;
+                        break;
                     case 'experiment':
                         experiment = line;
+                        if (effectiveSamplingRate !== -1) {
+                            // Avoid weird outliers.
+                            skipExperiment = (experiment.raw_duration / experiment.samples) > (effectiveSamplingRate * 5);
+                        }
                         break;
                     case 'throughput-point':
                     case 'progress-point': {
                         // Ignore data points of 0.
-                        if (line.delta > 0) {
+                        if (line.delta > 0 && !skipExperiment) {
                             var d = getDataForExperiment(profileData, experiment.selected, line.name, experiment.speedup, getInitialThroughputData);
                             d.points.push({
                                 delta: line.delta,
@@ -187,7 +199,7 @@ function parseFile(fileNum, totalFiles, f, profileData, startPercent, endPercent
                         break;
                     }
                     case 'latency-point':
-                        if ((line.arrivals + line.departures + line.difference) > 0) {
+                        if ((line.arrivals + line.departures + line.difference) > 0 && !skipExperiment) {
                             var d = getDataForExperiment(profileData, experiment.selected, line.name, experiment.speedup, getInitialThroughputData);
                             d.points.push({
                                 arrivals: line.arrivals,

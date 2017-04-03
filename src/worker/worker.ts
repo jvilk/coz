@@ -140,6 +140,9 @@ function parseLine(s: string): RawLine {
       case 'arrivals':
       case 'departures':
       case 'difference':
+      case 'raw_duration':
+      case 'samples':
+      case 'effective_sampling_rate':
         value = parseInt(value, 10);
         break;
       case 'speedup':
@@ -192,6 +195,8 @@ function parseFile(fileNum: number, totalFiles: number, f: string, profileData: 
   let experiment: RawExperimentLine = null;
   let counter = 0;
   let lastUpdate = performance.now();
+  let effectiveSamplingRate = -1;
+  let skipExperiment = false;
   const valuePerChar = len / (endPercent - startPercent);
   // Note: Iterate to <= len; special case when i === len.
   for (let i = 0; i <= len; i++) {
@@ -199,13 +204,20 @@ function parseFile(fileNum: number, totalFiles: number, f: string, profileData: 
       const line = parseLine(f.slice(lineStart, i));
       if (line && line.type) {
         switch (line.type) {
+          case 'causal_profile':
+            effectiveSamplingRate = line.effective_sampling_rate;
+            break;
           case 'experiment':
             experiment = line;
+            if (effectiveSamplingRate !== -1) {
+              // Avoid weird outliers.
+              skipExperiment = (experiment.raw_duration / experiment.samples) > (effectiveSamplingRate * 5);
+            }
             break;
           case 'throughput-point':
           case 'progress-point': {
             // Ignore data points of 0.
-            if (line.delta > 0) {
+            if (line.delta > 0 && !skipExperiment) {
               const d = getDataForExperiment(profileData, experiment.selected, line.name, experiment.speedup, getInitialThroughputData) as ThroughputData;
               d.points.push({
                 delta: line.delta,
@@ -215,7 +227,7 @@ function parseFile(fileNum: number, totalFiles: number, f: string, profileData: 
             break;
           }
           case 'latency-point':
-            if ((line.arrivals + line.departures + line.difference) > 0) {
+            if ((line.arrivals + line.departures + line.difference) > 0 && !skipExperiment) {
               const d = getDataForExperiment(profileData, experiment.selected, line.name, experiment.speedup, getInitialThroughputData) as LatencyData;
               d.points.push({
                 arrivals: line.arrivals,

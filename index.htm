@@ -32,6 +32,7 @@
             <select id="sortby_field" class="form-control" disabled aria-labelledby="sortby_label">
               <option value="alphabetical">Alphabetical</option>
               <option value="impact" selected>Impact</option>
+              <option value="pessimal_impact">Pessimal Impact</option>
               <option value="max_speedup">Max Speedup</option>
               <option value="min_speedup">Min Speedup</option>
             </select>
@@ -49,6 +50,15 @@
             </datalist>
             <p id="minpoints_display" class="text-center">10</p>
           </div> <!-- /minpoint -->
+
+          <div id="hidden_plots">
+            <h4 id="hidden_plots_label">Hidden Plots</h4>
+            <div class="form-group">
+              <select id="hidden_plots_select" multiple class="form-control" disabled="disabled">
+              </select>
+            </div>
+            <button id="hidden_plots_btn" class="btn btn-sm btn-primary" disabled="disabled" style="width:100%;">Unhide Selected</button>
+          </div> <!-- /hidden_plots -->
 
         </div> <!-- /sidebar -->
 

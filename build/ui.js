@@ -6,6 +6,9 @@
  */
 var d3 = _d3;
 
+function IDENTITY(d) {
+    return d;
+}
 /**
  * Formats the title of a graph.
  * Removes everything but the script in URLs so that function names appear.
@@ -22,7 +25,13 @@ function formatTitle(t) {
     }
     return t.slice(lastSlash, cutoff) + " " + t.slice(t.indexOf(' ', cutoff));
 }
-function max_normalized_area(d) {
+function get_average_value(m) {
+    return m.progress_speedup.value;
+}
+function get_lowest_95conf_value(m) {
+    return m.progress_speedup.conf_left;
+}
+function max_normalized_area(d, get_value) {
     var max_normalized_area = 0;
     for (var _i = 0, _a = d.progress_points; _i < _a.length; _i++) {
         var point = _a[_i];
@@ -30,7 +39,7 @@ function max_normalized_area(d) {
         var prev_data = point.measurements[0];
         for (var _b = 0, _c = point.measurements; _b < _c.length; _b++) {
             var current_data = _c[_b];
-            var avg_progress_speedup = (prev_data.progress_speedup.value + current_data.progress_speedup.value) / 2;
+            var avg_progress_speedup = (get_value(prev_data) + get_value(current_data)) / 2;
             area += avg_progress_speedup * (current_data.speedup - prev_data.speedup);
             var normalized_area = area / current_data.speedup;
             if (normalized_area > max_normalized_area)
@@ -74,7 +83,13 @@ var sort_functions = {
             { return -1; }
     },
     impact: function (a, b) {
-        if (max_normalized_area(b) > max_normalized_area(a))
+        if (max_normalized_area(b, get_average_value) > max_normalized_area(a, get_average_value))
+            { return 1; }
+        else
+            { return -1; }
+    },
+    pessimal_impact: function (a, b) {
+        if (max_normalized_area(b, get_lowest_95conf_value) > max_normalized_area(a, get_lowest_95conf_value))
             { return 1; }
         else
             { return -1; }
@@ -92,11 +107,19 @@ var sort_functions = {
             { return -1; }
     }
 };
+function hideHideButtons() {
+    // Hide all hide buttons.
+    $('.hide-btn').css('display', 'none');
+    // Remove blur.
+    $('.plot > svg').css('filter', 'none');
+}
 var Profile = (function () {
     function Profile(data, container, legend, get_min_points, display_warning) {
         this._data = null;
         this._disabled_progress_points = [];
         this._progress_points = null;
+        // Program fragments that should not be plotted.
+        this._hidden_plots = {};
         this._data = data;
         this._plot_container = container;
         this._plot_legend = legend;
@@ -159,40 +182,20 @@ var Profile = (function () {
         // Stable order.
         return this._progress_points = points.sort();
     };
-    /*  public getBadDataPoints(): ExperimentResult[] {
-        let result = new Array<ExperimentResult>();
-        for (let selected in this._data) {
-          const selectedData = this._data[selected];
-          const experimentResult: ExperimentResult = {
-            name: selected,
-            progress_points: []
-          };
-          for (let pp in selectedData) {
-            const ppData = selectedData[pp];
-            if (!ppData[0]) {
-              continue;
-            }
-            const point: Point = {
-              name: pp,
-              measurements: []
-            };
-            for (let speedup in ppData) {
-              const sData = ppData[+speedup];
-              if (sData.type === 'throughput' && speedup !== '0') {
-                const dataPoints = sData.points;
-                for (const dataPoint of dataPoints) {
-    
-                  dataPoint.duration;
-                }
-              }
-            }
-          }
-        }
-      }*/
+    Profile.prototype.getHiddenPlots = function () {
+        return Object.keys(this._hidden_plots).sort();
+    };
+    Profile.prototype.hidePlot = function (program_fragment) {
+        this._hidden_plots[program_fragment] = true;
+    };
+    Profile.prototype.unhidePlot = function (program_fragment) {
+        delete this._hidden_plots[program_fragment];
+    };
     /**
      * Returns relevant speedup data given:
      * - The desired minimum number of points.
      * - The currently enabled progress points.
+     * - The currently ignored functions / lines.
      */
     Profile.prototype.getSpeedupData = function (min_points) {
         var this$1 = this;
@@ -201,6 +204,9 @@ var Profile = (function () {
         var progress_points = this.getProgressPoints().filter(function (pp) { return _this._disabled_progress_points.indexOf(pp) === -1; });
         var result = [];
         for (var selected in this$1._data) {
+            if (this$1._hidden_plots[selected]) {
+                continue;
+            }
             var points = [];
             var points_with_enough = 0;
             for (var i = 0; i < progress_points.length; i++) {
@@ -280,9 +286,28 @@ var Profile = (function () {
         });
         legend_entries_sel.append('span')
             .attr('class', 'path')
-            .text(function (d) { return d; });
+            .text(IDENTITY);
+        var hidden_plots = this.getHiddenPlots();
+        var hidden_plots_select = d3.select('#hidden_plots_select');
+        var hidden_plots_list = hidden_plots_select.selectAll('option').data(hidden_plots);
+        //.data(hidden_plots);
+        hidden_plots_list.exit().remove();
+        hidden_plots_list.enter()
+            .append('option')
+            .text(IDENTITY)
+            .merge(hidden_plots_list);
+        var hidden_plots_btn = d3.select('#hidden_plots_btn');
+        if (hidden_plots.length === 0) {
+            hidden_plots_btn.attr('disabled', 'disabled');
+            hidden_plots_select.attr('disabled', 'disabled');
+        }
+        else {
+            hidden_plots_btn.attr('disabled', null);
+            hidden_plots_select.attr('disabled', null);
+        }
     };
     Profile.prototype.drawPlots = function (no_animate) {
+        var profile = this;
         var container = this._plot_container;
         var min_points = this._get_min_points();
         var speedup_data = this.getSpeedupData(min_points);
@@ -361,6 +386,7 @@ var Profile = (function () {
         // First, remove divs that are disappearing
         plot_div_sel.exit().transition().duration(200)
             .style('opacity', 0).remove();
+        hideHideButtons();
         // Insert new divs with zero opacity
         plot_div_sel = plot_div_sel.enter()
             .append('div')
@@ -368,6 +394,40 @@ var Profile = (function () {
             .style('margin-bottom', -div_height + 'px')
             .style('opacity', 0)
             .style('width', div_width)
+            .each(function (d) {
+            d3.select(this)
+                .append('button')
+                .attr('type', 'button')
+                .attr('class', 'btn btn-primary hide-btn')
+                .style('position', 'absolute')
+                .style('display', 'none')
+                .style('z-index', '10')
+                .text('Hide Plot')
+                .on('click', function () {
+                var self = this;
+                var parent = d3.select(self.parentNode);
+                var data = parent.datum();
+                profile.hidePlot(data.name);
+                profile.drawPlots(false);
+                profile.drawLegend();
+            });
+        })
+            .on('click', function (d) {
+            var self = $(this);
+            var svg = self.children('svg');
+            var isSelected = svg.css('filter') !== 'none';
+            hideHideButtons();
+            // Clicking a selected plot will just unselect it.
+            if (!isSelected) {
+                // Show + center the button
+                var btn = self.children('.hide-btn');
+                btn.css('display', 'inline')
+                    .css('left', (self.width() / 2) - (btn.width() / 2) + 'px')
+                    .css('top', (self.height() / 2) - (btn.height() / 2) + 'px');
+                // Blur the plot
+                svg.css('filter', 'blur(5px)');
+            }
+        })
             .merge(plot_div_sel);
         // Sort remaining plots by the chosen sorting function
         plot_div_sel = plot_div_sel.sort(sort_functions[(d3.select('#sortby_field').node()).value]);
@@ -389,7 +449,7 @@ var Profile = (function () {
         plot_title_sel = plot_title_sel.enter().append('div')
             .attr('class', 'plot-title')
             .merge(plot_title_sel)
-            .text(function (d) { return d; })
+            .text(IDENTITY)
             .classed('path', true)
             .style('width', div_width + 'px');
         /****** Update scales ******/
@@ -683,6 +743,24 @@ d3.select('#load-profile-file').on('change', function () {
 d3.select('#minpoints_field').on('input', function () {
     d3.select('#minpoints_display').text(this.value);
     update();
+});
+// Unhide plots selected in left menu.
+d3.select('#hidden_plots_btn').on('click', function () {
+    if (!current_profile) {
+        return;
+    }
+    var options = d3.selectAll('#hidden_plots_select > option').nodes();
+    var redraw = false;
+    for (var _i = 0, options_1 = options; _i < options_1.length; _i++) {
+        var option = options_1[_i];
+        if (option.selected) {
+            redraw = true;
+            current_profile.unhidePlot(option.innerText);
+        }
+    }
+    if (redraw) {
+        update();
+    }
 });
 d3.select('#sortby_field').on('change', update);
 d3.select(window).on('resize', function () { update(true); });

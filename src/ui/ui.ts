@@ -117,6 +117,24 @@ d3.select<HTMLInputElement, null>('#minpoints_field').on('input', function() {
   update();
 });
 
+// Unhide plots selected in left menu.
+d3.select<HTMLButtonElement, null>('#hidden_plots_btn').on('click', function() {
+  if (!current_profile) {
+    return;
+  }
+  const options = d3.selectAll<HTMLOptionElement, null>('#hidden_plots_select > option').nodes();
+  let redraw = false;
+  for (const option of options) {
+    if (option.selected) {
+      redraw = true;
+      current_profile.unhidePlot(option.innerText);
+    }
+  }
+  if (redraw) {
+    update();
+  }
+});
+
 d3.select('#sortby_field').on('change', update);
 
 d3.select(window).on('resize', function() { update(true); });
